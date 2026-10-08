@@ -1,0 +1,12 @@
+name: tabicl-course
+channels:
+  - conda-forge
+dependencies:
+  - python >= 3.11
+  - scikit-learn >= 1.8
+  - pandas
+  - matplotlib-base
+  - skrub
+  - skore
+  - tabicl >= 2.1
+  - jupyterlab
