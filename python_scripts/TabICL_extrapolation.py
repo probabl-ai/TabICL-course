@@ -24,7 +24,7 @@
 #   engineering.
 
 # %% [markdown]
-# ## The dataset
+# ## The landscape dataset
 #
 # `landscape_dataset.csv` is a synthetic dataset with two features, `x1` and
 # `x2`, both between -6 and 6, and a `target` we can read as the elevation at
@@ -126,12 +126,15 @@ def plot_landscape_surface(grid_prediction, title):
 # them when we call `predict`. That call is the same whether or not the rows
 # we predict on fall outside the training range, and the model has no way to
 # tell whether they do.
+#
+# We use a single ensemble member, `n_estimators=1`, to keep each call to
+# `predict` fast.
 
 # %%
 # %pip install -q tabicl
 from tabicl import TabICLRegressor
 
-tabicl = TabICLRegressor(random_state=0)
+tabicl = TabICLRegressor(n_estimators=1, random_state=0)
 tabicl.fit(data, target)
 grid_prediction_tabicl = tabicl.predict(grid_data).reshape(grid_x1.shape)
 
@@ -184,8 +187,6 @@ plot_landscape_surface(grid_prediction_hgbt, "HGBT (viridis: observed, red: x1 >
 # the right encoding for it.
 
 # %% [markdown]
-# ## How far to trust TabICL outside the training range
-#
 # TabICL's continuation is smoother than the tree's plateau, and it needed no
 # feature engineering. That does not make it correct. Past `x1 = 6`, no
 # in-context example constrains the prediction, and TabICL returns its guess
