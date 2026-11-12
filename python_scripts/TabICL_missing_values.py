@@ -6,248 +6,304 @@
 # ---
 
 # %% [markdown]
-# # Missing values are coordinates off the map
+# # How do HGBT and TabICL cope with missing values?
 #
-# Real tables often arrive with holes in them: a row where one of the values
-# was simply never recorded. Most models need those holes filled in before
-# they can be trained, TabICL does not.
+# So far, every table we gave HGBT and TabICL was complete. The learning curve
+# took whole rows away, and TabICL's pretraining made up for them. Real tables
+# also lose values inside the rows. A weather station goes offline for an
+# hour, and the temperature of that hour is never recorded.
 #
-# In this notebook, we:
+# Both models accept such holes, written as `NaN`, without asking us to fill
+# them first. They handle them in very different ways, though. HGBT learns
+# where to send a missing value at each split of its trees. TabICL quietly
+# replaces a missing number by the average of its column before its
+# transformer reads the table.
 #
-# * introduce heavy missing values into a synthetic landscape, and watch
-#   TabICL and a `HistGradientBoostingRegressor` predict straight through
-#   the gaps, no imputation step required;
-# * make that native handling explicit with TabICL's own imputer, and see
-#   that predicting a new row and filling in a missing value are the same
-#   operation, from the model's point of view.
+# In this notebook, we remove a growing share of the weather readings from
+# the bike sharing data, from none at all to every one of them, and measure
+# how the error of both models grows. We then give TabICL a better guess than
+# the average, read from the hour before each hole.
 
 # %% [markdown]
-# We reuse the landscape from the extrapolation notebook: two coordinates,
-# `x1` and `x2`, and a `target` we can read as the elevation at that point.
+# ## Learning objectives
+#
+# - Simulate values missing completely at random.
+# - Explain how HGBT and TabICL each handle missing values without an
+#   imputation step.
+# - Measure how the error of both models grows as weather readings go
+#   missing.
+# - Fill missing values before TabICL inside a pipeline, and measure how much
+#   of the lost accuracy a better guess wins back.
+
+# %% [markdown]
+# We reuse the bike sharing data and the splitter of the first notebook,
+# namely ten folds of 800 training hours and 200 test hours, with a 48-hour
+# gap between them.
 
 # %%
-import pandas as pd
-
-landscape = pd.read_csv("../datasets/landscape_dataset.csv")
-target_name = "target"
-target = landscape[target_name]
-data = landscape.drop(columns=target_name)
-
-# %%
-import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+from sklearn.model_selection import TimeSeriesSplit
 
-extrapolation_boundary = data["x1"].max()
-grid_1d_x1 = np.linspace(-6, 12, 60)
-grid_1d_x2 = np.linspace(-6, 6, 60)
-grid_x1, grid_x2 = np.meshgrid(grid_1d_x1, grid_1d_x2)
-grid_data = pd.DataFrame({"x1": grid_x1.ravel(), "x2": grid_x2.ravel()})
+bike_sharing = pd.read_csv("../datasets/bike_sharing.csv")
+categorical_columns = ["season", "holiday", "workingday", "weather"]
+bike_sharing[categorical_columns] = bike_sharing[categorical_columns].astype("category")
 
+target_name = "count"
+target = bike_sharing[target_name]
+data = bike_sharing.drop(columns=target_name)
 
-def plot_landscape_surface(grid_prediction, title):
-    observed = np.where(grid_x1 <= extrapolation_boundary, grid_prediction, np.nan)
-    extrapolated = np.where(grid_x1 > extrapolation_boundary, grid_prediction, np.nan)
-    fig = plt.figure(figsize=(9, 6))
-    ax = fig.add_subplot(projection="3d")
-    ax.plot_surface(grid_x1, grid_x2, observed, cmap="viridis", alpha=0.9, linewidth=0)
-    ax.plot_surface(grid_x1, grid_x2, extrapolated, cmap="Reds", alpha=0.9, linewidth=0)
-    ax.scatter(data["x1"], data["x2"], target, color="black", s=4, alpha=0.2)
-    ax.set_xlabel("x1")
-    ax.set_ylabel("x2")
-    ax.set_zlabel("target")
-    ax.set_title(title)
-    plt.show()
-
+ts_cv = TimeSeriesSplit(n_splits=10, gap=48, max_train_size=800, test_size=200)
 
 # %% [markdown]
-# As a reference, we first fit both models on the complete data and record
-# their training error, before any value goes missing.
+# ## Removing weather readings completely at random
+#
+# The calendar columns, such as `hour` or `holiday`, follow from the date, so
+# they are never missing in practice. The weather columns come from sensors,
+# and sensors fail. We only remove values from `weather`, `temp`,
+# `feel_temp`, `humidity`, and `windspeed`, and keep the target complete.
+#
+# Each value goes missing with the same probability, whatever its value and
+# whatever else happens in the row. Such values are **missing completely at
+# random** (MCAR). We draw one random number per cell, once, and a cell goes
+# missing when its number falls below the chosen fraction. So the cells
+# missing at 25 percent are also missing at 50 percent, and the curves below
+# compare nested sets of holes rather than unrelated ones. At 100 percent, we
+# drop the weather columns, so the models predict from the calendar alone.
+
+# %%
+weather_columns = ["weather", "temp", "feel_temp", "humidity", "windspeed"]
+
+rng = np.random.default_rng(0)
+random_draws = pd.DataFrame(
+    rng.random((len(data), len(weather_columns))),
+    columns=weather_columns,
+    index=data.index,
+)
+
+
+def remove_weather(data, missing_fraction):
+    if missing_fraction == 1:
+        return data.drop(columns=weather_columns)
+    data_missing = data.copy()
+    data_missing[weather_columns] = data[weather_columns].mask(
+        random_draws < missing_fraction
+    )
+    return data_missing
+
+
+remove_weather(data, 0.5).isna().mean().round(2)
+
+# %% [markdown]
+# ## How each model copes with missing readings
+#
+# HGBT learns where missing values go. At each split, it tries sending the
+# rows with a missing value to the left child and to the right child, and
+# keeps the side that reduces the error most. For a categorical column such
+# as `weather`, a missing value is treated as one more category.
+#
+# TabICL fills the holes before its transformer reads the table. Its internal
+# preprocessing passes the numerical columns through a scikit-learn
+# `SimpleImputer`, which replaces each missing value by the mean of the column
+# over the training rows. A missing `temp` thus looks like an average
+# temperature to the transformer. Categorical columns go through an
+# `OrdinalEncoder`, which gives missing values a code of their own.
+#
+# We fit TabICL many times in this notebook, so we use a single ensemble
+# member, `n_estimators=1`, instead of the default 8. Each member costs one
+# more pass of the transformer over the rows, as we saw in the exercise on
+# `n_estimators`. As a consequence, TabICL's errors on the complete data
+# differ slightly from those of the first notebook.
+#
+# ```{tip}
+# This cell takes about 3 minutes on a laptop CPU, almost all of it spent by
+# TabICL. On a slow machine, uncomment the shorter list of fractions.
+# ```
 
 # %%
 # %pip install -q tabicl
 from sklearn.ensemble import HistGradientBoostingRegressor
-from sklearn.metrics import mean_absolute_error
+from sklearn.model_selection import cross_validate
 from tabicl import TabICLRegressor
 
-tabicl = TabICLRegressor(random_state=0)
-tabicl.fit(data, target)
-mae_tabicl_clean = mean_absolute_error(target, tabicl.predict(data))
+missing_fractions = [0, 0.25, 0.5, 0.75, 1]
+# missing_fractions = [0, 0.5, 1]
 
-hgbt = HistGradientBoostingRegressor(random_state=0)
-hgbt.fit(data, target)
-mae_hgbt_clean = mean_absolute_error(target, hgbt.predict(data))
 
-# %% [markdown]
-# ## Native support for missing values
-#
-# In the previous notebook, extrapolation pushed a coordinate outside the
-# entire training square. A missing value is a gentler version of the same
-# idea. One coordinate of a
-# row is unknown, but the row itself still sits in territory the model
-# already knows well, surrounded by complete rows on every side.
+def missingness_curve(models, missing_fractions):
+    curve = {}
+    for name, model in models.items():
+        mae = {}
+        for missing_fraction in missing_fractions:
+            cv_results = cross_validate(
+                model,
+                remove_weather(data, missing_fraction),
+                target,
+                cv=ts_cv,
+                scoring="neg_mean_absolute_error",
+            )
+            mae[missing_fraction] = -cv_results["test_score"]
+        curve[name] = pd.DataFrame(mae).T
+    return curve
 
-# %%
-# Randomly mask one feature per row for most of the rows.
-rng = np.random.default_rng(0)
 
-# For each selected row, mask exactly one of the two features.
-mask = np.zeros(data.shape, dtype=bool)
-masked_rows = rng.choice(len(data), size=600, replace=False)
-masked_col = rng.integers(0, 2, size=len(masked_rows))
-mask[masked_rows, masked_col] = True
-
-data_missing = data.copy()
-data_missing[mask] = np.nan
-
-is_observed = ~mask.any(axis=1)
-is_partial = mask.any(axis=1)
-
-print(
-    f"Rows: {len(data)} total, {is_partial.sum()} with missing values, "
-    f"{is_observed.sum()} fully observed"
-)
-print(f"Cells: {mask.sum()} / {mask.size} missing ({100 * mask.mean():.0f} %)")
-
-# %%
-tabicl.fit(data_missing, target)
-grid_prediction_tabicl = tabicl.predict(grid_data).reshape(grid_x1.shape)
-
-plot_landscape_surface(
-    grid_prediction_tabicl, "TabICL (viridis: observed, red: x1 > 6)"
-)
-
-# %%
-hgbt.fit(data_missing, target)
-grid_prediction_hgbt = hgbt.predict(grid_data).reshape(grid_x1.shape)
-
-plot_landscape_surface(grid_prediction_hgbt, "HGBT (viridis: observed, red: x1 > 6)")
-
-# %% [markdown]
-# Both fits ran without any extra step. Neither TabICL nor
-# `HistGradientBoostingRegressor` needed the gaps filled in first, both
-# accept `NaN` directly in their training data. Not every scikit-learn
-# estimator can do that, a `Ridge` regression would raise an error on the
-# very same call. By construction, every incomplete row still keeps one of
-# its two coordinates, so there is always something left to reason from.
-
-# %%
-mae_tabicl_missing = mean_absolute_error(target, tabicl.predict(data))
-mae_hgbt_missing = mean_absolute_error(target, hgbt.predict(data))
-
-print(
-    f"TabICL MAE: {mae_tabicl_clean:.2f} clean -> {mae_tabicl_missing:.2f} with gaps in training"
-)
-print(
-    f"HGBT MAE:   {mae_hgbt_clean:.2f} clean -> {mae_hgbt_missing:.2f} with gaps in training"
+curve = missingness_curve(
+    {
+        "HGBT": HistGradientBoostingRegressor(random_state=0),
+        "TabICL": TabICLRegressor(n_estimators=1, random_state=0),
+    },
+    missing_fractions,
 )
 
 # %% [markdown]
-# Both models get worse once most of their training rows arrive with a
-# coordinate missing, unsurprisingly, they now have less to go on. HGBT
-# degrades more, though, its error roughly triples, while TabICL's a bit
-# more than doubles. TabICL's pretraining again gives it a slight edge, one
-# missing coordinate still leaves enough of a pattern in the rest of the
-# row, and in the surrounding rows, to reason from.
-#
-# Neither model asked us to fill anything in beforehand, and that is only
-# possible because, internally, coping with a missing `x1` already requires
-# guessing a plausible value for it from whatever the row does have. That
-# guess is an imputation, whether we call it that or not. Native support
-# for missing values isn't a separate feature bolted onto these models,
-# it's the same read-the-landscape reasoning we're about to make explicit.
-
-# %% [markdown]
-# So far `x1` and `x2` were always "the features" and `target` was always
-# "the answer". Let's make that implicit reasoning explicit. `tabicl` also
-# ships `TabICLUnsupervised`, an estimator that drops that distinction
-# entirely. It fits on a plain table, no target column singled out, and its
-# `impute` method fills whatever is missing in a row by conditioning on
-# whatever else that row happens to have, `x1`, `x2`, or `target`, whichever
-# is present. `target` is never masked, so it stays available as one more
-# known coordinate for every incomplete row, exactly as it was when HGBT and
-# TabICL predicted through the gaps a moment ago.
+# Each curve is a table with one row per fraction and one column per fold. We
+# plot the mean error across folds, with the standard deviation as error bars.
 
 # %%
-from tabicl import TabICLUnsupervised
+import matplotlib.pyplot as plt
 
-table_missing = data_missing.assign(target=target)
+plt.rcParams["figure.dpi"] = 200
+model_colors = {
+    "HGBT": "tab:blue",
+    "TabICL": "tab:orange",
+    "Forward fill + TabICL": "tab:green",
+}
 
-imputer = TabICLUnsupervised(random_state=0)
-imputer.fit(table_missing)
-data_imputed = imputer.impute(table_missing)
+
+def plot_curves(curve):
+    _, ax = plt.subplots(figsize=(9, 5), layout="constrained")
+    for name, mae in curve.items():
+        ax.errorbar(
+            100 * mae.index,
+            mae.mean(axis=1),
+            yerr=mae.std(axis=1),
+            fmt="o-",
+            capsize=3,
+            color=model_colors[name],
+            label=name,
+            alpha=0.7,
+        )
+    ax.set(
+        xlabel="Missing weather values (%)",
+        ylabel="Test mean absolute error",
+        title="Error as weather values go missing",
+        ylim=(0, None),
+    )
+    ax.legend(loc="upper left", bbox_to_anchor=(1.02, 1), borderaxespad=0)
+    plt.show()
+
+
+plot_curves(curve)
 
 # %% [markdown]
-# `fit` stores all 800 rows, missing cells included, as context, nothing in
-# that call says which column is the target. `impute` then revisits every
-# row that has a gap and fills it with the value that best matches
-# everything else it has seen, low `temperature` by default, so it reports
-# its single best guess rather than a random draw among plausible values.
+# Both errors grow as weather values disappear. From complete readings to
+# none, HGBT's mean error rises from 42 to 47 bikes per hour, and TabICL's
+# from 37 to 45. TabICL keeps the lower error at every fraction, although the
+# gap narrows to less than 2 bikes per hour once both models predict from the
+# calendar alone.
 #
-# `landscape_dataset.csv` holds these same 800 rows with nothing missing,
-# so we can check those guesses against the truth.
+# The two curves bend differently. HGBT's error peaks at 75 percent and is
+# slightly lower with no weather at all, so the quarter of readings left
+# gives it nothing. TabICL still draws about 2 bikes per hour from that
+# quarter, compared with no weather at all.
+#
+# As in the learning curve, the error bars are wide and overlap. They mostly
+# show that some test windows are much harder than others, for both models.
+
+# %% [markdown]
+# ## Filling the holes from the previous hour
+#
+# TabICL's guess for a missing number, the column mean, is the same for every
+# hour. Yet the weather changes slowly from one hour to the next, so the last
+# reading before a hole is a much better guess. The pandas method `ffill`,
+# for forward fill, copies that reading into the hole. It only reads past
+# hours, so it uses nothing we would not know at prediction time.
+#
+# We wrap `ffill` in a `FunctionTransformer` and chain it before TabICL with
+# `make_pipeline`. A column transformer restricts it to the numerical
+# columns, and passes the categorical ones through unchanged. Its pandas
+# output keeps their `category` dtype, and TabICL encodes them, holes
+# included, as before. We don't need to scale the filled columns, since
+# TabICL standardizes its inputs internally.
+#
+# The transformer learns nothing in `fit`. It fills the training rows from
+# earlier training rows, and the test rows from earlier test rows, which only
+# makes sense because both are in time order. A hole in the very first test
+# rows has no earlier reading to copy, so it stays empty, and TabICL fills it
+# with the mean as before.
+#
+# At 0 percent there is nothing to fill, and at 100 percent there is nothing
+# left to copy from, so we only run the pipeline in between.
+#
+# ```{tip}
+# This cell takes about a minute and a half on a laptop CPU.
+# ```
 
 # %%
-missing_x1_mask = table_missing["x1"].isna()
-missing_x2_mask = table_missing["x2"].isna()
+from sklearn.compose import make_column_selector, make_column_transformer
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import FunctionTransformer
 
-true_x1 = landscape.loc[missing_x1_mask, "x1"]
-true_x2 = landscape.loc[missing_x2_mask, "x2"]
-predicted_x1 = data_imputed[missing_x1_mask.to_numpy(), 0]
-predicted_x2 = data_imputed[missing_x2_mask.to_numpy(), 1]
 
-mae_x1 = mean_absolute_error(true_x1, predicted_x1)
-mae_x2 = mean_absolute_error(true_x2, predicted_x2)
-print(f"x1 imputation MAE: {mae_x1:.2f}")
-print(f"x2 imputation MAE: {mae_x2:.2f}")
+def forward_fill(X):
+    return X.ffill()
+
+
+forward_filler = make_column_transformer(
+    (FunctionTransformer(forward_fill), make_column_selector(dtype_include="number")),
+    remainder="passthrough",
+    verbose_feature_names_out=False,
+).set_output(transform="pandas")
+
+curve |= missingness_curve(
+    {
+        "Forward fill + TabICL": make_pipeline(
+            forward_filler, TabICLRegressor(n_estimators=1, random_state=0)
+        )
+    },
+    missing_fractions[1:-1],
+)
+plot_curves(curve)
 
 # %% [markdown]
-# Is that good? As a point of reference, we compare against the simplest
-# possible guess, filling every missing value with the average of that
-# column.
+# Forward fill wins back part of what the missing readings cost TabICL, as
+# long as the holes stay sparse. At 25 percent, it lowers TabICL's error from
+# 39.4 to 37.6 bikes per hour, close to the 37.1 of the complete data. At 50
+# percent, it lowers it from 41.9 to 39.4, about half of the way back.
+# At 75 percent, holes often span several hours, so the copied reading is
+# older, and the gain vanishes.
+#
+# Both pipelines see the same test windows, so we can also compare them fold
+# by fold. We subtract the error of forward fill from the error of TabICL
+# alone on each window. A positive gain means that forward fill lowers the
+# error.
 
 # %%
-naive_x1 = np.full(len(true_x1), table_missing["x1"].mean())
-naive_x2 = np.full(len(true_x2), table_missing["x2"].mean())
-
-print(f"x1 mean-fill MAE: {mean_absolute_error(true_x1, naive_x1):.2f}")
-print(f"x2 mean-fill MAE: {mean_absolute_error(true_x2, naive_x2):.2f}")
+forward_fill_mae = curve["Forward fill + TabICL"]
+gain = curve["TabICL"].loc[forward_fill_mae.index] - forward_fill_mae
+gain.assign(mean=gain.mean(axis=1), std=gain.std(axis=1)).round(1)
 
 # %% [markdown]
-# TabICL's guesses land two to three times closer to the truth than the
-# column average. It isn't recalling a typical `x1`, it reads the landscape
-# at the point described by that row's other coordinate and its `target`, and
-# reports what it finds there, the same reasoning it used to predict
-# `target` from `x1` and `x2` in the extrapolation notebook, with the roles
-# of "known" and "unknown" simply reshuffled.
+# At 25 and 50 percent, the mean gain is about 2 bikes per hour, with a
+# standard deviation of about 6. The spread is wide because one test window
+# gains 17 to 18 bikes per hour, while the others range from a loss of about
+# 7 to a gain of about 6.
 #
-# Drop `target` from that table and hand the imputer only `x2` to recover
-# `x1` from, and it stops beating the column average altogether. `x1` and
-# `x2` were drawn independently of each other, only `target` ties them
-# together, so without it there is nothing left to read off. Imputation is
-# only as good as the signal actually available in the columns we hand it,
-# exactly like any other prediction task.
-#
-# `impute` isn't doing anything exotic, either. TabICL's own documentation
-# describes it as a MICE-like procedure, the same idea behind scikit-learn's
-# `IterativeImputer`. Each column that has missing values gets modeled as a
-# function of the others, and those guesses get refined over a couple of
-# passes.
+# Forward fill helps because it brings information that no column of a row
+# holds, namely the readings of the previous hours.
 
 # %% [markdown]
 # ## Notebook recap
 #
 # In this notebook, we:
 #
-# * masked most rows down to a single known coordinate and watched TabICL
-#   and HGBT predict `target` straight through the gaps with no imputation
-#   step, HGBT's error degrading noticeably more than TabICL's;
-# * made that native handling explicit with `TabICLUnsupervised.impute`,
-#   which fits with no target column singled out, and checked its guesses
-#   against the true values and a mean-fill baseline;
-# * saw that imputation is only as good as the signal actually available,
-#   dropping `target` from the imputer's table collapsed its guesses back
-#   to the mean-fill baseline, since `x1` and `x2` alone carry nothing
-#   about each other;
-# * concluded that predicting a new row and filling in a missing value are
-#   the same operation for a TFM, reading a landscape at a point it wasn't
-#   directly given.
+# * removed a growing share of the weather values completely at random, with
+#   nested sets of holes, up to predicting from the calendar alone;
+# * saw that HGBT learns at each split where missing values go, while TabICL
+#   replaces a missing number by the column mean through a `SimpleImputer`;
+# * measured that both errors grow as readings disappear, with TabICL keeping
+#   the lower error at every fraction, and still using the last quarter of
+#   the readings where HGBT no longer does;
+# * filled the holes before TabICL, inside a pipeline, by copying the last
+#   past reading forward, which won back part of the lost accuracy up to 50
+#   percent of missing values, but nothing at 75 percent.

@@ -17,18 +17,18 @@
 # training window grows, using a learning curve.
 
 # %%
-from sklearn.datasets import fetch_openml
+import pandas as pd
 
-bike_sharing = fetch_openml(
-    "Bike_Sharing_Demand", version=2, as_frame=True, parser="pandas"
-).frame
+bike_sharing = pd.read_csv("../datasets/bike_sharing.csv")
+categorical_columns = ["season", "holiday", "workingday", "weather"]
+bike_sharing[categorical_columns] = bike_sharing[categorical_columns].astype("category")
 
 target_name = "count"
 target = bike_sharing[target_name]
 data = bike_sharing.drop(columns=target_name)
 
 # %% [markdown]
-# ## A learning curve that respects time
+# ## Learning curve with time-based splits
 #
 # A **learning curve** repeats the same cross-validation for a growing number
 # of training samples and tracks how the test error changes. Here we only
@@ -45,19 +45,18 @@ data = bike_sharing.drop(columns=target_name)
 #
 # TabICL's memory and prediction time grow with the size of its context, so we
 # stop it at 3,200 rows to stay within a laptop's reach. HGBT is cheap enough
-# to go up to 16,000 rows, nearly the full two years of rentals. HGBT keeps its
+# to go up to 12,800 rows, about a year and a half of rentals. HGBT keeps its
 # default hyperparameters, because the smallest windows are too short to nest
 # a time-aware search inside them, and tuning gained it little in the previous
 # notebook.
 #
-# We also record how long each model takes to fit and predict. The first call
-# to TabICL's `fit` downloads the pretrained weights, so we call it once before
-# the loop to keep the download out of the timings.
-#
 # ```{tip}
 # The TabICL part of this cell takes about 6 minutes to run on a CPU. On a slow
 # machine, uncomment the line that stops TabICL at 800 rows, which brings it
-# down to under 2 minutes. The discussion below refers to the full curve.
+# down to under 2 minutes. If you have a CUDA GPU, which TabICL uses
+# automatically, you can instead uncomment the line that runs TabICL up to
+# 12,800 rows, like HGBT. The discussion below refers to the curve up to 3,200
+# rows.
 # ```
 
 # %%
@@ -66,16 +65,18 @@ from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.model_selection import TimeSeriesSplit, cross_validate
 from tabicl import TabICLRegressor
 
-train_sizes = {
-    "HGBT": [100, 200, 400, 800, 1600, 3200, 6400, 12800],
-    "TabICL": [100, 200, 400, 800, 1600, 3200],
-}
-# train_sizes["TabICL"] = [100, 200, 400, 800]
 models = {
     "HGBT": HistGradientBoostingRegressor(random_state=0),
     "TabICL": TabICLRegressor(random_state=0),
 }
-models["TabICL"].fit(data.iloc[:100], target.iloc[:100])
+models["TabICL"].fit(data.iloc[:100], target.iloc[:100])  # warm-up
+
+train_sizes = {
+    "HGBT": [100, 200, 400, 800, 1_600, 3_200, 6_400, 12_800],
+    "TabICL": [100, 200, 400, 800, 1_600, 3_200],
+}
+# train_sizes["TabICL"] = [100, 200, 400, 800]
+# train_sizes["TabICL"] = train_sizes["HGBT"]
 
 learning_curve_mae = {}
 learning_curve_time = {}
@@ -90,9 +91,14 @@ for name, model in models.items():
             model, data, target, cv=cv, scoring="neg_mean_absolute_error"
         )
         learning_curve_mae[name].append(-results["test_score"])
-        learning_curve_time[name].append(
-            results["fit_time"] + results["score_time"]
-        )
+        learning_curve_time[name].append(results["fit_time"] + results["score_time"])
+
+# %% [markdown]
+# Notice that the cell above calls TabICL's `fit` once before the loop. As we
+# saw in the previous notebook, the first call downloads the pretrained
+# weights. Doing it before the loop keeps the download out of the timings, so
+# that no fold pays a cost the others don't, and differences in time come only
+# from the model's computations.
 
 # %%
 import matplotlib.pyplot as plt
@@ -124,17 +130,35 @@ ax.legend()
 plt.show()
 
 # %% [markdown]
-# With a few hundred rows, TabICL clearly wins. Its pretraining makes up for
-# the missing data, while HGBT has too few rows to learn the daily and weekly
-# patterns of the rentals. HGBT needs about twice as many rows to match
-# TabICL's error.
+# TabICL keeps a lower average error at every training size where both run,
+# although the error bars overlap at some sizes. With a few hundred rows, the
+# gap is large, and HGBT needs 3,200 rows to come close to the error TabICL
+# reaches with 400. As the window grows, HGBT's error keeps falling up to
+# 3,200 rows and the gap narrows, while TabICL's error barely improves beyond
+# 400 rows.
 #
-# Past 1,600 rows, TabICL's curve flattens, while HGBT keeps improving and, fed
-# nearly the full history, ends below TabICL's best error.
+# Why does TabICL win when data is scarce? With a few hundred rows, many
+# relationships fit the training data, so the inductive bias of a model plays
+# a larger role. The inductive bias is the kind of relationship a model type
+# favors by construction. Gradient boosting builds step functions from splits
+# on single features, and estimates each step from the few rows that fall in
+# it. TabICL's prior mixes many kinds of relationships, such as smooth curves,
+# linear trends, plateaus and tree-like splits, and TabICL infers from the
+# context which kind fits the table. We will look at this prior in a dedicated
+# video. Where the truth is smooth, TabICL can interpolate between a few points
+# where trees would draw noisy steps. As the window grows, the data pins down
+# the relationship on its own, the inductive bias matters less, and HGBT
+# closes part of the gap.
 #
-# Each point of these curves also has a computational cost. `cross_validate`
-# records the time spent fitting and scoring each fold, and we plot their sum,
-# the time it takes to train a model and predict the 200 test hours.
+# Data can also be scarce in only part of a table. With imbalanced classes,
+# the rare class has few rows even in a large table, so the inductive bias
+# matters most there. We will meet this case in a later notebook on card
+# fraud.
+#
+# Each additional row of context also costs TabICL more memory and more
+# prediction time. `cross_validate` records the time spent fitting and scoring
+# each fold, and we plot their sum, the time it takes to train a model and
+# predict the 200 test hours.
 
 # %%
 _, ax = plt.subplots(figsize=(9, 5), layout="constrained")
@@ -163,16 +187,17 @@ plt.show()
 # %% [markdown]
 # HGBT needs about a second per fold at most, and its time grows much more
 # slowly than the number of rows. TabICL takes a few seconds per fold up to 800
-# rows, then its time more than doubles each time the training window doubles,
-# reaching about 35 seconds per fold at 3,200 rows. TabICL learns in context, so
+# rows, then its time roughly doubles each time the training window doubles,
+# reaching about 27 seconds per fold at 3,200 rows. TabICL learns in context, so
 # it processes the whole training window again every time it predicts.
 #
 # The exact timings depend on your hardware, but the trend should hold. At
 # 3,200 rows, TabICL is more than an order of magnitude slower than HGBT
-# trained on 16,000 rows, and has a higher error.
+# trained on 12,800 rows.
 #
-# A TFM pays off most when data is scarce. With plenty of rows, gradient
-# boosting catches up at a fraction of the compute.
+# A TFM pays off most when data is scarce. As the training window grows,
+# TabICL's advantage shrinks, while its compute cost grows much faster than
+# HGBT's.
 
 # %% [markdown]
 # ## Notebook recap
@@ -181,7 +206,10 @@ plt.show()
 #
 # * built a learning curve for time series by shrinking `max_train_size` in
 #   `TimeSeriesSplit`, so every training window ends right before the gap;
-# * compared the test MAE of HGBT and TabICL from 100 to 16,000 training rows;
+# * compared the test MAE of HGBT and TabICL from 100 to 12,800 training rows;
 # * compared their fit + predict wall-clock time over the same training sizes;
-# * saw TabICL win when data is scarce, and HGBT overtake it once fed most of
-#   the history.
+# * saw TabICL win clearly when data is scarce, and its advantage shrink as the
+#   training window grows, while its compute cost grows much faster than
+#   HGBT's;
+# * explained the advantage on small data by the inductive bias, which matters
+#   most when few rows constrain the relationship.

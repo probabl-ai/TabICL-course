@@ -12,8 +12,8 @@
 # [Machine learning in Python with scikit-learn](https://skolar.probabl.ai/)
 # course, such as linear models or gradient-boosted trees, learn by adjusting
 # their parameters to the training data. A pretrained large language model
-# works differently: we don't retrain it for a new task, we show it a few
-# examples in a prompt and it answers.
+# works differently. We don't retrain it for a new task. Instead, we show it a
+# few examples in a prompt and it answers.
 #
 # Tabular foundation models, or TFMs, bring that idea to tables. TabICL is one
 # of them. Its transformer was pretrained once, on millions of synthetic
@@ -24,40 +24,32 @@
 # (HGBT) on the bike sharing dataset, first with default hyperparameters, then
 # giving HGBT a growing tuning budget.
 
-# %%
-from sklearn.datasets import fetch_openml
-
-bike_sharing = fetch_openml(
-    "Bike_Sharing_Demand", version=2, as_frame=True, parser="pandas"
-).frame
-
-# %%
-from skrub import TableReport
-
-TableReport(bike_sharing)
-
 # %% [markdown]
-# ## Two years of hourly rentals, shaped by weather and the calendar
+# ## The bike sharing dataset
 #
-# This table comes from Capital Bikeshare, Washington D.C.'s bike-sharing
-# system. Each row is one hour between 2011 and 2012.
-#
-# `season`, `year` (0 for 2011, 1 for 2012), `month`, `hour`, and `weekday`
-# place that hour in the calendar. `holiday` and `workingday` flag public
-# holidays and working days. `weather`, `temp`, `feel_temp`, `humidity`, and
-# `windspeed` describe the conditions outside. `count`, our target, is the
-# number of bikes rented that hour. Predicting it lets an operator rebalance
-# bikes across stations before demand picks up.
+# Each row is one hour of Capital Bikeshare, Washington D.C.'s bike-sharing
+# system, in 2011 or 2012. The columns describe the calendar and the weather.
+# `count`, our target, is the number of bikes rented that hour. The
+# [bike sharing dataset notebook](datasets_bike_sharing.ipynb) explores the
+# data and explains how we prepared the CSV file we load here.
 
 # %%
+import pandas as pd
+
+bike_sharing = pd.read_csv("../datasets/bike_sharing.csv")
+categorical_columns = ["season", "holiday", "workingday", "weather"]
+bike_sharing[categorical_columns] = bike_sharing[categorical_columns].astype("category")
+
 target_name = "count"
 target = bike_sharing[target_name]
 data = bike_sharing.drop(columns=target_name)
 
 # %% [markdown]
-# Consecutive rows are only an hour apart and strongly correlated. Shuffling
-# them before splitting, the default behind `cv=5`, would let a model train on
-# rows right next to its test set. `TimeSeriesSplit` always trains on the past
+# Consecutive rows are only an hour apart and strongly correlated. Passing
+# `cv=5` would use a `KFold` that doesn't shuffle, so each test fold is a
+# contiguous block of hours. The training rows still surround that block, so
+# every fold but the last would train on the future, and on the hours right
+# next to the ones it is tested on. `TimeSeriesSplit` always trains on the past
 # and tests on the future, and a 48-hour `gap` keeps the test set from starting
 # right where the training data ends.
 #
@@ -74,8 +66,8 @@ ts_cv = TimeSeriesSplit(n_splits=10, gap=48, max_train_size=800, test_size=200)
 # ## What `fit` does for TabICL
 #
 # The `tabicl` package wraps the pretrained model behind the usual scikit-learn
-# `fit`/`predict` interface. Its `fit` doesn't train anything: it loads the
-# pretrained weights and stores our training rows as context. The first call
+# `fit`/`predict` interface. Its `fit` doesn't train anything. Instead, it loads
+# the pretrained weights and stores our training rows as context. The first call
 # also downloads the weights, about 110 MB, to a local cache.
 
 # %%
@@ -83,35 +75,27 @@ ts_cv = TimeSeriesSplit(n_splits=10, gap=48, max_train_size=800, test_size=200)
 from tabicl import TabICLRegressor
 
 tabicl = TabICLRegressor(random_state=0)
-data_train, target_train = data.iloc[:800], target.iloc[:800]
 
 # %%
 # %%time
-tabicl.fit(data_train, target_train)
+_ = tabicl.fit(data.iloc[:100], target.iloc[:100])
 
 # %% [markdown]
-# Calling `fit` again is nearly instant:
+# Let's call `fit` a second time:
 
 # %%
 # %%time
-tabicl.fit(data_train, target_train)
+_ = tabicl.fit(data.iloc[:100], target.iloc[:100])
 
 # %% [markdown]
 # This time the weights are already on disk, and reading them back takes a
-# fraction of a second. The weights never change: they stay as pretraining left
-# them, whatever rows we pass. The expensive part happens in `predict`, where
-# the transformer reads the stored rows to produce each prediction.
-#
-# The [nanotabicl](https://github.com/soda-inria/nanotabicl) project
-# reimplements this transformer in under 200 lines of PyTorch. It ships no
-# pretrained weights, so it is meant for reading the architecture, not for
-# predicting.
+# fraction of a second. The expensive part happens in `predict`, where the
+# transformer reads the stored rows to produce each prediction.
 
 # %% [markdown]
 # ## Comparing both models with default hyperparameters
 #
-# `season`, `holiday`, `workingday`, and `weather` already have pandas'
-# `category` dtype, which HGBT handles natively, so neither model needs any
+# HGBT handles the `category` columns natively, so neither model needs any
 # preprocessing.
 
 # %%
@@ -135,15 +119,11 @@ cv_results_tabicl = cross_validate(
 
 # %%
 import matplotlib.pyplot as plt
-import pandas as pd
 
 plt.rcParams["figure.dpi"] = 200
 
 cv_results = pd.DataFrame(
-    {
-        "HGBT": -cv_results_hgbt["test_score"],
-        "TabICL": -cv_results_tabicl["test_score"],
-    }
+    {"HGBT": -cv_results_hgbt["test_score"], "TabICL": -cv_results_tabicl["test_score"]}
 )
 
 color = {"whiskers": "black", "medians": "black", "caps": "black"}
@@ -153,17 +133,16 @@ plt.title("Test MAE across folds (800 training rows, 200 test rows)")
 plt.show()
 
 # %% [markdown]
-# With no tuning on either side, TabICL's errors sit lower, around 48 bikes
-# per hour on average against 57 for HGBT, and it wins on most folds. Both
-# boxes are wide: some folds land in an unusually quiet or busy stretch that
-# 800 rows of history don't anticipate.
+# TabICL's errors sit lower, around 37 bikes per hour on average against 42 for
+# HGBT. Both boxes are wide, because some folds land in an unusually quiet or
+# busy stretch that 800 rows of history don't anticipate.
 
 # %% [markdown]
-# ## Where does the time go?
+# ## Error versus computation time
 #
 # `cross_validate` also records the duration of `fit` and `predict` on each
-# fold. We summarize each model as a single point: its mean MAE and mean time
-# across folds, with error bars for the standard deviation.
+# fold. We summarize each model as a single point, namely its mean MAE and mean
+# time across folds, and add error bars for the standard deviation.
 
 # %%
 model_results = {"HGBT": cv_results_hgbt, "TabICL": cv_results_tabicl}
@@ -195,14 +174,13 @@ axes[1].legend()
 plt.show()
 
 # %% [markdown]
-# Both models fit in about a third of a second: HGBT grows its trees while
-# TabICL reads its weights from disk. Prediction tells them apart. HGBT
-# predicts 200 rows in hundredths of a second, whereas TabICL needs several
-# seconds, because its transformer processes the 800 context rows together with
-# the rows to predict.
+# Both models fit in under a second, HGBT growing its trees and
+# TabICL reading its weights from disk. HGBT predicts 200 rows in hundredths of
+# a second, whereas TabICL needs several seconds, because its transformer
+# processes the 800 context rows together with the rows to predict.
 
 # %% [markdown]
-# ## Does a tuning budget close the gap?
+# ## Tuning HGBT's hyperparameters
 #
 # HGBT's defaults are not necessarily its best. A `RandomizedSearchCV` lets us
 # give it a budget, the number of candidates `n_iter` it may try. More
@@ -210,14 +188,15 @@ plt.show()
 # time. The search needs its own leak-free splitter, so we nest a smaller
 # `TimeSeriesSplit` inside each training fold.
 #
-# We leave `learning_rate` and `max_iter` at their defaults: a smaller learning
+# We leave `learning_rate` and `max_iter` at their defaults. A smaller learning
 # rate needs more trees, so tuning both at once mostly wastes budget. Instead,
 # we search over the parameters that control the complexity of each tree, in
 # ranges suited to 800 training rows.
 #
-# Fixing `random_state` makes the searches nested: the 4 candidates tried with
-# `n_iter=4` are the first 4 of the 8 tried with `n_iter=8`, and so on. We keep
-# `n_jobs` at its default so the timings stay comparable with TabICL's.
+# Fixing `random_state` makes the searches nested, meaning that the 4 candidates
+# tried with `n_iter=4` are the first 4 of the 8 tried with `n_iter=8`, and so
+# on. We keep `n_jobs` at its default so the timings stay comparable with
+# TabICL's.
 #
 # ```{tip}
 # The full range of budgets takes a couple of minutes to run. On a slow
@@ -249,7 +228,7 @@ param_distributions = {
 }
 inner_cv = TimeSeriesSplit(n_splits=3, gap=48)
 
-budgets = [1, 2, 4, 8, 16]
+budgets = [1, 4, 8, 16]
 # budgets = [1]
 cv_results_random_search = {}
 for n_iter in budgets:
@@ -271,8 +250,8 @@ for n_iter in budgets:
 
 
 # %%
-def plot_error_vs_time(time_keys, ylabel, title):
-    _, ax = plt.subplots(figsize=(9, 5), layout="constrained")
+def plot_error_vs_time(time_keys, ylabel, title, annotate=True):
+    _, ax = plt.subplots(figsize=(10, 7), layout="constrained")
     for n_iter, results in cv_results_random_search.items():
         mae = -results["test_score"]
         times = sum(results[key] for key in time_keys)
@@ -285,13 +264,14 @@ def plot_error_vs_time(time_keys, ylabel, title):
             color=model_colors["HGBT"],
             label="HGBT (random search)" if n_iter == budgets[0] else None,
         )
-        ax.annotate(
-            f"n_iter={n_iter}",
-            (mae.mean(), times.mean()),
-            textcoords="offset points",
-            xytext=(6, 6),
-            color=model_colors["HGBT"],
-        )
+        if annotate:
+            ax.annotate(
+                f"n_iter={n_iter}",
+                (mae.mean(), times.mean()),
+                textcoords="offset points",
+                xytext=(6, 6),
+                color=model_colors["HGBT"],
+            )
 
     mae = -cv_results_tabicl["test_score"]
     times = sum(cv_results_tabicl[key] for key in time_keys)
@@ -317,7 +297,9 @@ def plot_error_vs_time(time_keys, ylabel, title):
 plot_error_vs_time(["fit_time"], "Fit time (s)", "Fit time vs error")
 
 # %%
-plot_error_vs_time(["score_time"], "Predict time (s)", "Predict time vs error")
+plot_error_vs_time(
+    ["score_time"], "Predict time (s)", "Predict time vs error", annotate=False
+)
 
 # %%
 plot_error_vs_time(
@@ -327,11 +309,12 @@ plot_error_vs_time(
 )
 
 # %% [markdown]
-# A single random candidate does worse than the defaults, and it takes 8
-# candidates to beat them. Beyond that, the error barely moves: 16 candidates
-# bring HGBT to about 54 bikes per hour, still above TabICL's 48, while fit
-# time keeps doubling with the budget. At `n_iter=16`, HGBT spends more total
-# compute than TabICL and still predicts worse.
+# A single random candidate does much worse than the defaults, and it takes 8
+# candidates to match them. Doubling the budget to 16 does not improve the
+# error further, which stays at about 42 bikes per hour, above TabICL's 37,
+# while fit time more than doubles. At `n_iter=8`, HGBT already spends about
+# as much total compute as TabICL, and at `n_iter=16` more than twice as much,
+# and it still predicts worse.
 
 # %% [markdown]
 # ## Notebook recap
@@ -344,8 +327,8 @@ plot_error_vs_time(
 #   windows of the bike sharing data, respecting the time order;
 # * compared where each model spends its time, in `fit` for HGBT and in
 #   `predict` for TabICL;
-# * gave HGBT a random search with a growing budget, which brought its error
-#   closer to TabICL's at a growing cost in fit time.
+# * gave HGBT a random search with a growing budget, which did not bring its
+#   error below its defaults by much while its fit time kept growing.
 #
 # The next notebook checks whether TabICL keeps its lead as the training window
 # grows.

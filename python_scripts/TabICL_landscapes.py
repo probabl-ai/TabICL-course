@@ -32,7 +32,7 @@
 #   operation, from the model's point of view.
 
 # %% [markdown]
-# ## What happens once we ask for a point off the map?
+# ## Predicting outside the training range
 #
 # `landscape_dataset.csv` is a synthetic dataset: two coordinates, `x1` and
 # `x2`, and a `target` we can read as the elevation at that point. Every row
@@ -96,13 +96,16 @@ def plot_landscape_surface(grid_prediction, title):
 # where TabICL actually reads them and answers. Nothing about that call changes
 # when some of the questions we ask fall outside the training range, the model
 # has no way of even knowing that they do.
+#
+# We use a single ensemble member, `n_estimators=1`, to keep each call to
+# `predict` fast.
 
 # %%
 # %pip install -q tabicl
 from sklearn.metrics import mean_absolute_error
 from tabicl import TabICLRegressor
 
-tabicl = TabICLRegressor(random_state=0)
+tabicl = TabICLRegressor(n_estimators=1, random_state=0)
 tabicl.fit(data, target)
 grid_prediction_tabicl = tabicl.predict(grid_data).reshape(grid_x1.shape)
 mae_tabicl_clean = mean_absolute_error(
@@ -243,7 +246,7 @@ from tabicl import TabICLUnsupervised
 
 table_missing = data_missing.assign(target=target)
 
-imputer = TabICLUnsupervised(random_state=0)
+imputer = TabICLUnsupervised(n_estimators=1, random_state=0)
 imputer.fit(table_missing)
 data_imputed = imputer.impute(table_missing)
 
