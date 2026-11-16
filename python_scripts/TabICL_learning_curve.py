@@ -43,6 +43,12 @@ data = bike_sharing.drop(columns=target_name)
 # training size. These are the last 5 of the previous notebook's 10 test
 # windows, so errors at 800 rows differ from the ones we saw there.
 #
+# In the previous exercise, extra ensemble members lowered TabICL's error by
+# about 2% at most, while each one added a full pass of the transformer at
+# predict time. For the rest of this course, we set `n_estimators=1` to save
+# time. On your own data, first check how your metric of interest changes with
+# `n_estimators`, as we did in the exercise, before trimming the ensemble.
+#
 # TabICL's memory and prediction time grow with the size of its context, so we
 # stop it at 3,200 rows to stay within a laptop's reach. HGBT is cheap enough
 # to go up to 12,800 rows, about a year and a half of rentals. HGBT keeps its
@@ -51,12 +57,10 @@ data = bike_sharing.drop(columns=target_name)
 # notebook.
 #
 # ```{tip}
-# The TabICL part of this cell takes about 6 minutes to run on a CPU. On a slow
-# machine, uncomment the line that stops TabICL at 800 rows, which brings it
-# down to under 2 minutes. If you have a CUDA GPU, which TabICL uses
-# automatically, you can instead uncomment the line that runs TabICL up to
-# 12,800 rows, like HGBT. The discussion below refers to the curve up to 3,200
-# rows.
+# The TabICL part of this cell takes a bit over a minute on a laptop CPU. With
+# more compute power, for example a GPU, which TabICL uses automatically, you
+# can uncomment the line that runs TabICL up to 12,800 rows, like HGBT. The
+# discussion below refers to the curve up to 3,200 rows.
 # ```
 
 # %%
@@ -67,7 +71,7 @@ from tabicl import TabICLRegressor
 
 models = {
     "HGBT": HistGradientBoostingRegressor(random_state=0),
-    "TabICL": TabICLRegressor(random_state=0),
+    "TabICL": TabICLRegressor(n_estimators=1, random_state=0),
 }
 models["TabICL"].fit(data.iloc[:100], target.iloc[:100])  # warm-up
 
@@ -75,7 +79,6 @@ train_sizes = {
     "HGBT": [100, 200, 400, 800, 1_600, 3_200, 6_400, 12_800],
     "TabICL": [100, 200, 400, 800, 1_600, 3_200],
 }
-# train_sizes["TabICL"] = [100, 200, 400, 800]
 # train_sizes["TabICL"] = train_sizes["HGBT"]
 
 learning_curve_mae = {}
@@ -134,8 +137,8 @@ plt.show()
 # although the error bars overlap at some sizes. With a few hundred rows, the
 # gap is large, and HGBT needs 3,200 rows to come close to the error TabICL
 # reaches with 400. As the window grows, HGBT's error keeps falling up to
-# 3,200 rows and the gap narrows, while TabICL's error barely improves beyond
-# 400 rows.
+# 3,200 rows and the gap narrows, while TabICL's error improves more slowly
+# beyond 400 rows and stops improving after 1,600.
 #
 # Why does TabICL win when data is scarce? With a few hundred rows, many
 # relationships fit the training data, so the inductive bias of a model plays
@@ -185,15 +188,16 @@ ax.legend()
 plt.show()
 
 # %% [markdown]
-# HGBT needs about a second per fold at most, and its time grows much more
-# slowly than the number of rows. TabICL takes a few seconds per fold up to 800
-# rows, then its time roughly doubles each time the training window doubles,
-# reaching about 27 seconds per fold at 3,200 rows. TabICL learns in context, so
-# it processes the whole training window again every time it predicts.
+# HGBT's time grows much more slowly than the number of rows. From 800 to
+# 12,800 rows, the training window grows sixteen times, and HGBT's time less
+# than doubles. TabICL's time barely changes up to a few hundred rows, where
+# fixed costs dominate. From 800 rows on, it grows by about 1.7 each time the
+# training window doubles. TabICL learns in context, so it processes the whole
+# training window again every time it predicts.
 #
 # The exact timings depend on your hardware, but the trend should hold. At
-# 3,200 rows, TabICL is more than an order of magnitude slower than HGBT
-# trained on 12,800 rows.
+# 3,200 rows, TabICL is about three times slower than HGBT on the same rows,
+# and about twice as slow as HGBT trained on 12,800 rows.
 #
 # A TFM pays off most when data is scarce. As the training window grows,
 # TabICL's advantage shrinks, while its compute cost grows much faster than

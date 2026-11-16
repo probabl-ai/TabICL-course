@@ -65,9 +65,9 @@ ts_cv = TimeSeriesSplit(n_splits=40, gap=48, max_train_size=200, test_size=200)
 # ensemble sizes to compare.
 #
 # ```{tip}
-# The default grid takes about 5 minutes on a laptop CPU. With more compute,
-# or a GPU, uncomment the full grid, which adds 32 members and about 3 more
-# minutes.
+# The default grid takes a few minutes on a laptop CPU. With more compute, or a
+# GPU, uncomment the full grid, which adds 16 and 32 members and more than
+# doubles the run time.
 # ```
 
 # %%
@@ -80,7 +80,7 @@ _ = (
     .predict(data.iloc[100:120])
 )
 
-all_n_estimators = [1, 2, 4, 8, 16]
+all_n_estimators = [1, 2, 4, 8]
 # all_n_estimators = [1, 2, 4, 8, 16, 32]
 
 # %% [markdown]
@@ -131,10 +131,10 @@ all_n_estimators = [1, 2, 4, 8, 16]
 # These curves suggest a rule of thumb. Increase `n_estimators` until you hit
 # one of two limits, whichever comes first. The first limit is the plateau,
 # where extra members stop lowering the error. You find it by measuring, as we
-# did here, and it sits around 8 members on this data. The second limit is the
-# ceiling of twice the number of non-constant columns. Beyond it, TabICL
-# builds no new members. Prefer even values, because members come in pairs,
-# one with and one without the power transform.
+# did here, and it sits between 2 and 8 members on this data. The second limit
+# is the ceiling of twice the number of non-constant columns. Beyond it,
+# TabICL builds no new members. Prefer even values, because members come in
+# pairs, one with and one without the power transform.
 #
 # The plateau depends on the data. With 800-row windows, as in the previous
 # notebook, we found no measurable gain at all, so the plateau starts at a

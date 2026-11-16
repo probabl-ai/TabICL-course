@@ -59,9 +59,9 @@ ts_cv = TimeSeriesSplit(n_splits=40, gap=48, max_train_size=200, test_size=200)
 # ensemble sizes to compare.
 #
 # ```{tip}
-# The default grid takes about 5 minutes on a laptop CPU. With more compute,
-# or a GPU, uncomment the full grid, which adds 32 members and about 3 more
-# minutes.
+# The default grid takes a few minutes on a laptop CPU. With more compute, or a
+# GPU, uncomment the full grid, which adds 16 and 32 members and more than
+# doubles the run time.
 # ```
 
 # %%
@@ -74,7 +74,7 @@ _ = (
     .predict(data.iloc[100:120])
 )
 
-all_n_estimators = [1, 2, 4, 8, 16]
+all_n_estimators = [1, 2, 4, 8]
 # all_n_estimators = [1, 2, 4, 8, 16, 32]
 
 # %% [markdown]
@@ -118,10 +118,10 @@ cv_results.groupby("n_estimators")[["mae", "fit_time", "score_time"]].mean()
 # %% [markdown] tags=["solution"]
 # Fit time stays around a quarter of a second, whatever the number of members.
 # `fit` never runs the transformer, so all the extra cost lands in `predict`.
-# On our laptop, predicting takes 0.2 seconds with one member, 1.7 seconds with
-# eight, and 3.5 seconds with sixteen. Predict time grows almost in proportion
-# to the number of members. The mean MAE barely moves in comparison, from 52.9
-# bikes per hour with one member to 51.7 with eight and 51.8 with sixteen.
+# On our laptop, predicting takes 0.2 seconds with one member and 1.7 seconds
+# with eight. Predict time grows almost in proportion to the number of
+# members. The mean MAE barely moves in comparison, from 52.9 bikes per hour
+# with one member to 51.7 with eight.
 
 # %% [markdown]
 # ## Error and predict time as `n_estimators` grows
@@ -209,17 +209,18 @@ plt.ylabel("MAE gain over one member\n(bikes per hour)")
 plt.show()
 
 # %% [markdown] tags=["solution"]
-# Eight members lower the MAE by 1.2 bikes per hour on average, and sixteen
-# members by 1.0. The error bars span about 4 bikes per hour on each side,
+# Eight members lower the MAE by 1.2 bikes per hour on average. The error bars
+# span about 4 bikes per hour on each side,
 # four times less than in the previous plot, because comparing within each
 # fold removes how hard each window is. They still cross zero, so the gain
 # varies from fold to fold, and it is small, about 2% of the error.
 #
-# Going from 8 to 16 members brings nothing, and the mean gain even drops by
-# 0.1 bikes per hour. The error has saturated by 8 members, but predict time
-# keeps doubling. Two and four members bring about the same mean gain, 1.0
-# and 0.9 bikes per hour, but with wider error bars, about 5 and 4.5 bikes per
-# hour on each side against 4 for eight members.
+# Two and four members bring about the same mean gain, 1.0 and 0.9 bikes per
+# hour, but with wider error bars, about 5 and 4.5 bikes per hour on each side
+# against 4 for eight members. The mean gain stops growing after two members,
+# while predict time keeps doubling. Beyond that, extra members mostly make the
+# gain more consistent from fold to fold. If you run the full grid, you will
+# see that 16 and 32 members bring no further gain.
 #
 # On this data, the default of 8 members buys a small gain, at about seven
 # times the predict time of a single member. Whether that trade is worth it
@@ -229,10 +230,10 @@ plt.show()
 # These curves suggest a rule of thumb. Increase `n_estimators` until you hit
 # one of two limits, whichever comes first. The first limit is the plateau,
 # where extra members stop lowering the error. You find it by measuring, as we
-# did here, and it sits around 8 members on this data. The second limit is the
-# ceiling of twice the number of non-constant columns. Beyond it, TabICL
-# builds no new members. Prefer even values, because members come in pairs,
-# one with and one without the power transform.
+# did here, and it sits between 2 and 8 members on this data. The second limit
+# is the ceiling of twice the number of non-constant columns. Beyond it,
+# TabICL builds no new members. Prefer even values, because members come in
+# pairs, one with and one without the power transform.
 #
 # The plateau depends on the data. With 800-row windows, as in the previous
 # notebook, we found no measurable gain at all, so the plateau starts at a
