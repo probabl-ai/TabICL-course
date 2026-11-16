@@ -232,30 +232,46 @@ print(
 
 # %% [markdown]
 # So far `x1` and `x2` were always "the features" and `target` was always
-# "the answer". Let's make that implicit reasoning explicit. `tabicl` also
-# ships `TabICLUnsupervised`, an estimator that drops that distinction
-# entirely. It fits on a plain table, no target column singled out, and its
-# `impute` method fills whatever is missing in a row by conditioning on
-# whatever else that row happens to have, `x1`, `x2`, or `target`, whichever
-# is present. `target` is never masked, so it stays available as one more
-# known coordinate for every incomplete row, exactly as it was when HGBT and
-# TabICL predicted through the gaps a moment ago.
+# "the answer". Let's make that implicit reasoning explicit, by dropping that
+# distinction entirely. Treat the three columns as one plain table, no target
+# column singled out, and fill whatever is missing in a row by conditioning
+# on whatever else that row happens to have, `x1`, `x2`, or `target`,
+# whichever is present. `target` is never masked, so it stays available as
+# one more known coordinate for every incomplete row, exactly as it was when
+# HGBT and TabICL predicted through the gaps a moment ago.
+#
+# scikit-learn's `IterativeImputer` does exactly this with any regressor, and
+# we hand it TabICL. Each column with missing values is predicted from the
+# other columns by a `TabICLRegressor`, column by column, over a couple of
+# passes. `tabicl` also ships `TabICLUnsupervised`, whose `impute` method runs
+# the same kind of procedure on TabICL's model directly and gives almost the
+# same numbers here; `IterativeImputer` keeps every step visible, and works
+# with any scikit-learn regressor, including a remote one such as
+# `tabapi.TabAPIRegressor`.
 
 # %%
-from tabicl import TabICLUnsupervised
+from sklearn.experimental import enable_iterative_imputer  # noqa: F401
+from sklearn.impute import IterativeImputer
 
 table_missing = data_missing.assign(target=target)
 
-imputer = TabICLUnsupervised(n_estimators=1, random_state=0)
-imputer.fit(table_missing)
-data_imputed = imputer.impute(table_missing)
+imputer = IterativeImputer(
+    estimator=TabICLRegressor(n_estimators=1, random_state=0),
+    max_iter=2,
+    initial_strategy="median",
+    imputation_order="ascending",
+    random_state=0,
+)
+data_imputed = imputer.fit_transform(table_missing)
 
 # %% [markdown]
-# `fit` stores all 800 rows, missing cells included, as context, nothing in
-# that call says which column is the target. `impute` then revisits every
-# row that has a gap and fills it with the value that best matches
-# everything else it has seen, low `temperature` by default, so it reports
-# its single best guess rather than a random draw among plausible values.
+# Nothing in that call says which column is the target. The imputer first
+# fills each gap with its column's median, then, for each column with
+# missing values, fits a `TabICLRegressor` on the rows where that column is
+# known and predicts it for the rows where it isn't, from the row's other
+# coordinates. A second pass repeats this with the improved guesses. Each
+# guess is TabICL's single best prediction, not a random draw among
+# plausible values.
 #
 # `landscape_dataset.csv` holds these same 800 rows with nothing missing,
 # so we can check those guesses against the truth.
@@ -301,11 +317,11 @@ print(f"x2 mean-fill MAE: {mean_absolute_error(true_x2, naive_x2):.2f}")
 # only as good as the signal actually available in the columns we hand it,
 # exactly like any other prediction task.
 #
-# `impute` isn't doing anything exotic, either. TabICL's own documentation
-# describes it as a MICE-like procedure, the same idea behind scikit-learn's
-# `IterativeImputer`. Each column that has missing values gets modeled as a
-# function of the others, and those guesses get refined over a couple of
-# passes.
+# None of this is exotic, either. It is the MICE idea (multiple imputation
+# by chained equations): each column that has missing values gets modeled
+# as a function of the others, and those guesses get refined over a couple
+# of passes. TabICL simply makes a very good model for each of those
+# columns, without any training.
 
 # %% [markdown]
 # ## Notebook recap
@@ -321,9 +337,10 @@ print(f"x2 mean-fill MAE: {mean_absolute_error(true_x2, naive_x2):.2f}")
 # * masked most rows down to a single known coordinate and watched TabICL
 #   and HGBT predict `target` straight through the gaps with no imputation
 #   step, HGBT's error degrading noticeably more than TabICL's;
-# * made that native handling explicit with `TabICLUnsupervised.impute`,
-#   which fits with no target column singled out, and checked its guesses
-#   against the true values and a mean-fill baseline;
+# * made that native handling explicit with an `IterativeImputer` driven by
+#   `TabICLRegressor`, which treats the table with no target column singled
+#   out, and checked its guesses against the true values and a mean-fill
+#   baseline;
 # * saw that imputation is only as good as the signal actually available,
 #   dropping `target` from the imputer's table collapsed its guesses back
 #   to the mean-fill baseline, since `x1` and `x2` alone carry nothing
