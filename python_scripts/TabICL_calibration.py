@@ -149,8 +149,6 @@ report = ComparisonReport(
 # %%
 import matplotlib.pyplot as plt
 
-plt.rcParams["figure.dpi"] = 200
-
 fig = report.metrics.confusion_matrix().plot()
 for ax in fig.axes:
     ax.set(xticklabels=["legitimate", "fraud"], yticklabels=["legitimate", "fraud"])

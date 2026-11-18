@@ -119,7 +119,6 @@ for name, model in models.items():
 import matplotlib.pyplot as plt
 import numpy as np
 
-plt.rcParams["figure.dpi"] = 200
 model_colors = {"HGBT": "tab:blue", "TabICL": "tab:orange"}
 
 _, ax = plt.subplots(figsize=(9, 5), layout="constrained")

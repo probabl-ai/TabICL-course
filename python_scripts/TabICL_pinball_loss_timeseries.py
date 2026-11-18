@@ -167,7 +167,6 @@ intervals = {
     for name, model in models.items()
 }
 
-plt.rcParams["figure.dpi"] = 200
 hours_ahead = np.arange(len(test_index))
 
 fig, ax = plt.subplots(figsize=(11, 4))

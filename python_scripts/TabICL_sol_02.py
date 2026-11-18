@@ -128,8 +128,6 @@ cv_results.groupby("kv_cache")["mae"].agg(["mean", "std"])
 # solution
 import matplotlib.pyplot as plt
 
-plt.rcParams["figure.dpi"] = 200
-
 time_columns = {
     "fit_time": "fit",
     "score_time": "predict",

@@ -297,8 +297,6 @@ gain_curves = {
 # %%
 import matplotlib.pyplot as plt
 
-plt.rcParams["figure.dpi"] = 200
-
 fig, axes = plt.subplots(
     1, 2, figsize=(12, 6.75), sharex=True, sharey=True, layout="constrained"
 )

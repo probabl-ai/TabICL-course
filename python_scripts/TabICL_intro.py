@@ -147,8 +147,6 @@ cv_results_tabicl = cross_validate(
 # %%
 import matplotlib.pyplot as plt
 
-plt.rcParams["figure.dpi"] = 200
-
 cv_results = pd.DataFrame(
     {"HGBT": -cv_results_hgbt["test_score"], "TabICL": -cv_results_tabicl["test_score"]}
 )

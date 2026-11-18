@@ -152,8 +152,6 @@ cv_results.groupby("n_estimators")[["mae", "fit_time", "score_time"]].mean()
 # solution
 import matplotlib.pyplot as plt
 
-plt.rcParams["figure.dpi"] = 200
-
 summary = cv_results.groupby("n_estimators")[["mae", "score_time"]].agg(
     ["mean", "std"]
 )

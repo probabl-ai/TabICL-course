@@ -176,7 +176,6 @@ curve = missingness_curve(
 # %%
 import matplotlib.pyplot as plt
 
-plt.rcParams["figure.dpi"] = 200
 model_colors = {
     "HGBT": "tab:blue",
     "TabICL": "tab:orange",
