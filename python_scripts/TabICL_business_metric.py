@@ -49,8 +49,7 @@
 # transaction aside, since our metric needs it.
 
 # %%
-# %pip install tabapi==0.3.0rc2 pyodide-http
-# # %pip install tabicl
+# %pip install tabapi pyodide-http
 
 # %%
 import os

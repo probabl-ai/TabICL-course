@@ -43,8 +43,7 @@
 # hours cover the last 8,000 hours of the data, about eleven months.
 
 # %%
-# %pip install tabapi==0.3.0rc2
-# # %pip install tabicl
+# %pip install tabapi
 
 # %%
 import os

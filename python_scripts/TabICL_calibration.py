@@ -48,8 +48,7 @@
 # representing about 5 percent of all transactions.
 
 # %%
-# %pip install tabapi==0.3.0rc2 skore pyodide-http
-# # %pip install tabicl
+# %pip install tabapi skore pyodide-http
 
 # %%
 import os

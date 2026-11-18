@@ -39,8 +39,7 @@
 # in it has both coordinates between -6 and 6.
 
 # %%
-# %pip install tabapi==0.3.0rc2
-# # %pip install tabicl
+# %pip install tabapi
 
 # %%
 import os

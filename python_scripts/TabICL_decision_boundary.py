@@ -55,8 +55,7 @@
 #   context which kind fits the table.
 
 # %%
-# %pip install tabapi==0.3.0rc2
-# # %pip install tabicl
+# %pip install tabapi
 
 # %%
 import os
