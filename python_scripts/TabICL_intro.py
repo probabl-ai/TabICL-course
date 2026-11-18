@@ -28,14 +28,14 @@
 # ```{note}
 # These notebooks call TabICL through TabAPI, a server that runs TabICL for
 # us, so that they also run in a web browser. The next two cells install the
-# `tabapi` client and set the token that gives access to the server. Through
-# TabAPI, timings also include the network and depend on the server's load.
+# `tabapi` client and set the address of the server. Through TabAPI, timings
+# also include the network and depend on the server's load.
 #
 # If you run the notebooks locally, prefer the `tabicl` package. It needs no
-# network and no token, and `fit` and `predict` then behave as described in
-# this course. To switch, install `tabicl`, uncomment the lines that use
-# `TabICLRegressor` or `TabICLClassifier`, and comment out the ones that use
-# `TabAPIRegressor` or `TabAPIClassifier`.
+# network, and `fit` and `predict` then behave as described in this course.
+# To switch, install `tabicl`, uncomment the lines that use `TabICLRegressor`
+# or `TabICLClassifier`, and comment out the ones that use `TabAPIRegressor`
+# or `TabAPIClassifier`.
 # ```
 
 # %%
@@ -43,9 +43,6 @@
 # # %pip install tabicl
 
 # %%
-import os
-
-os.environ.setdefault("TABAPI_API_TOKEN", "O259r6jzkRtpFQOQSHVD4kAgIA93DI9A5aJl90FV6Uk")
 TABAPI_URL = "https://api.tabicl.org"
 
 # %% [markdown]

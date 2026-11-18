@@ -57,9 +57,6 @@
 # # %pip install tabicl
 
 # %%
-import os
-
-os.environ.setdefault("TABAPI_API_TOKEN", "O259r6jzkRtpFQOQSHVD4kAgIA93DI9A5aJl90FV6Uk")
 TABAPI_URL = "https://api.tabicl.org"
 
 # %%
