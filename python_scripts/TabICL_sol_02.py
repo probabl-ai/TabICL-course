@@ -155,11 +155,11 @@ plt.show()
 # %% [markdown] tags=["solution"]
 # The cache moves time from `predict` to `fit`. Without the cache, `fit` takes
 # about a quarter of a second and `predict` about 5 seconds. That quarter of a
-# second goes into reading the weights and preparing the ensemble members of
-# the previous exercise, for example their column orders. With the cache,
-# `fit` takes about 4.6 seconds, because it now runs the transformer over the
-# 800 training rows of all 8 ensemble members. `predict` drops to about 1
-# second, since only the 200 test rows remain to be processed.
+# second goes into reading the weights and preparing the single ensemble
+# member of the previous exercise, for example its column order. With the
+# cache, `fit` takes about 4.6 seconds, because it now runs the transformer
+# over the 800 training rows. `predict` drops to about 1 second, since only
+# the 200 test rows remain to be processed.
 #
 # The two totals, about 5.5 seconds, overlap within their error bars.
 # Cross-validation fits each model once and predicts once, so the stored work

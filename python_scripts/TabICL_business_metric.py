@@ -218,8 +218,7 @@ gains.agg(["mean", "std"]).round()
 # predicted probabilities of each test set. We fit each model on each split
 # and keep only these probabilities. Keeping the fitted models would cost
 # memory, because each fitted TabICL model holds its own copy of the
-# pretrained weights, more than 100 MB. Each model predicts only once, so we
-# also leave the `kv_cache` of the previous notebook off.
+# pretrained weights, more than 100 MB.
 
 # %%
 from sklearn.base import clone
