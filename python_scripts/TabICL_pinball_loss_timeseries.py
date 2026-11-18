@@ -53,6 +53,16 @@
 # hours do not start where the training data stops.
 
 # %%
+# %pip install tabapi==0.3.0rc2
+# # %pip install tabicl
+
+# %%
+import os
+
+os.environ.setdefault("TABAPI_API_TOKEN", "O259r6jzkRtpFQOQSHVD4kAgIA93DI9A5aJl90FV6Uk")
+TABAPI_URL = "https://tabapi.probabl.ai"
+
+# %%
 import pandas as pd
 from sklearn.model_selection import TimeSeriesSplit
 
@@ -118,13 +128,17 @@ class HGBTInterval(BaseEstimator):
 # `n_estimators=1`.
 
 # %%
-# %pip install -q tabicl
-from tabicl import TabICLRegressor
+from tabapi import TabAPIRegressor
+
+# from tabicl import TabICLRegressor
 
 
 class TabICLInterval(BaseEstimator):
     def fit(self, X, y):
-        self.model_ = TabICLRegressor(n_estimators=1, random_state=0).fit(X, y)
+        self.model_ = TabAPIRegressor(
+            base_url=TABAPI_URL, n_estimators=1, random_state=0
+        ).fit(X, y)
+        # self.model_ = TabICLRegressor(n_estimators=1, random_state=0).fit(X, y)
         return self
 
     def predict(self, X):

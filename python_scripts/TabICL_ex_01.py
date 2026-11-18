@@ -43,6 +43,16 @@
 # hours cover the last 8,000 hours of the data, about eleven months.
 
 # %%
+# %pip install tabapi==0.3.0rc2
+# # %pip install tabicl
+
+# %%
+import os
+
+os.environ.setdefault("TABAPI_API_TOKEN", "O259r6jzkRtpFQOQSHVD4kAgIA93DI9A5aJl90FV6Uk")
+TABAPI_URL = "https://tabapi.probabl.ai"
+
+# %%
 import pandas as pd
 from sklearn.model_selection import TimeSeriesSplit
 
@@ -71,11 +81,13 @@ ts_cv = TimeSeriesSplit(n_splits=40, gap=48, max_train_size=200, test_size=200)
 # ```
 
 # %%
-# %pip install -q tabicl
-from tabicl import TabICLRegressor
+from tabapi import TabAPIRegressor
+
+# from tabicl import TabICLRegressor
 
 _ = (
-    TabICLRegressor(random_state=0)
+    TabAPIRegressor(base_url=TABAPI_URL, random_state=0)
+    # TabICLRegressor(random_state=0)
     .fit(data.iloc[:100], target.iloc[:100])
     .predict(data.iloc[100:120])
 )
@@ -84,12 +96,12 @@ all_n_estimators = [1, 2, 4, 8]
 # all_n_estimators = [1, 2, 4, 8, 16, 32]
 
 # %% [markdown]
-# For each value in `all_n_estimators`, cross-validate a `TabICLRegressor`
-# with `random_state=0`, using `ts_cv` and the mean absolute error as scoring.
-# Collect the results in a dataframe named `cv_results`, with one row per
-# ensemble size and fold. Its columns should be `n_estimators`, `fold`, `mae`,
-# `fit_time`, and `score_time`. Then display the mean of each column for each
-# ensemble size.
+# For each value in `all_n_estimators`, cross-validate the TabICL regressor of
+# the previous cell with `random_state=0`, using `ts_cv` and the mean absolute
+# error as scoring. Collect the results in a dataframe named `cv_results`,
+# with one row per ensemble size and fold. Its columns should be
+# `n_estimators`, `fold`, `mae`, `fit_time`, and `score_time`. Then display
+# the mean of each column for each ensemble size.
 #
 # Which of the three columns changes the most with the number of members?
 

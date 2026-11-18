@@ -31,6 +31,16 @@
 # each point.
 
 # %%
+# %pip install tabapi==0.3.0rc2
+# # %pip install tabicl
+
+# %%
+import os
+
+os.environ.setdefault("TABAPI_API_TOKEN", "O259r6jzkRtpFQOQSHVD4kAgIA93DI9A5aJl90FV6Uk")
+TABAPI_URL = "https://tabapi.probabl.ai"
+
+# %%
 import pandas as pd
 
 landscape = pd.read_csv("../datasets/landscape_dataset.csv")
@@ -131,10 +141,12 @@ def plot_landscape_surface(grid_prediction, title):
 # `predict` fast.
 
 # %%
-# %pip install -q tabicl
-from tabicl import TabICLRegressor
+from tabapi import TabAPIRegressor
 
-tabicl = TabICLRegressor(n_estimators=1, random_state=0)
+# from tabicl import TabICLRegressor
+
+tabicl = TabAPIRegressor(base_url=TABAPI_URL, n_estimators=1, random_state=0)
+# tabicl = TabICLRegressor(n_estimators=1, random_state=0)
 tabicl.fit(data, target)
 grid_prediction_tabicl = tabicl.predict(grid_data).reshape(grid_x1.shape)
 

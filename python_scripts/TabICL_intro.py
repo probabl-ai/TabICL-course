@@ -25,6 +25,30 @@
 # giving HGBT a growing tuning budget.
 
 # %% [markdown]
+# ```{note}
+# These notebooks call TabICL through TabAPI, a server that runs TabICL for
+# us, so that they also run in a web browser. The next two cells install the
+# `tabapi` client and set the token that gives access to the server. Through
+# TabAPI, timings also include the network and depend on the server's load.
+#
+# If you run the notebooks locally, prefer the `tabicl` package. It needs no
+# network and no token, and `fit` and `predict` then behave as described in
+# this course. To switch, install `tabicl`, uncomment the lines that use
+# `TabICLRegressor` or `TabICLClassifier`, and comment out the ones that use
+# `TabAPIRegressor` or `TabAPIClassifier`.
+# ```
+
+# %%
+# %pip install tabapi==0.3.0rc2
+# # %pip install tabicl
+
+# %%
+import os
+
+os.environ.setdefault("TABAPI_API_TOKEN", "O259r6jzkRtpFQOQSHVD4kAgIA93DI9A5aJl90FV6Uk")
+TABAPI_URL = "https://tabapi.probabl.ai"
+
+# %% [markdown]
 # ## The bike sharing dataset
 #
 # Each row is one hour of Capital Bikeshare, Washington D.C.'s bike-sharing
@@ -71,10 +95,12 @@ ts_cv = TimeSeriesSplit(n_splits=10, gap=48, max_train_size=800, test_size=200)
 # also downloads the weights, about 110 MB, to a local cache.
 
 # %%
-# %pip install -q tabicl
-from tabicl import TabICLRegressor
+from tabapi import TabAPIRegressor
 
-tabicl = TabICLRegressor(random_state=0)
+# from tabicl import TabICLRegressor
+
+tabicl = TabAPIRegressor(base_url=TABAPI_URL, random_state=0)
+# tabicl = TabICLRegressor(random_state=0)
 
 # %%
 # %%time
@@ -110,7 +136,8 @@ cv_results_hgbt = cross_validate(
     scoring="neg_mean_absolute_error",
 )
 cv_results_tabicl = cross_validate(
-    TabICLRegressor(random_state=0),
+    TabAPIRegressor(base_url=TABAPI_URL, random_state=0),
+    # TabICLRegressor(random_state=0),
     data,
     target,
     cv=ts_cv,

@@ -49,6 +49,22 @@
 # transaction aside, since our metric needs it.
 
 # %%
+# %pip install tabapi==0.3.0rc2 pyodide-http
+# # %pip install tabicl
+
+# %%
+import os
+
+os.environ.setdefault("TABAPI_API_TOKEN", "O259r6jzkRtpFQOQSHVD4kAgIA93DI9A5aJl90FV6Uk")
+TABAPI_URL = "https://tabapi.probabl.ai"
+
+# %%
+# Lets `fetch_openml` download data when running in a browser.
+import pyodide_http
+
+pyodide_http.patch_urllib()
+
+# %%
 import pandas as pd
 from sklearn.datasets import fetch_openml
 from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit
@@ -207,14 +223,16 @@ gains.agg(["mean", "std"]).round()
 # also leave the `kv_cache` of the previous notebook off.
 
 # %%
-# %pip install -q tabicl
 from sklearn.base import clone
 from sklearn.ensemble import HistGradientBoostingClassifier
-from tabicl import TabICLClassifier
+from tabapi import TabAPIClassifier
+
+# from tabicl import TabICLClassifier
 
 models = {
     "HGBT": HistGradientBoostingClassifier(random_state=0),
-    "TabICL": TabICLClassifier(n_estimators=1, random_state=0),
+    "TabICL": TabAPIClassifier(base_url=TABAPI_URL, n_estimators=1, random_state=0),
+    # "TabICL": TabICLClassifier(n_estimators=1, random_state=0),
 }
 proba = {name: [] for name in models}
 for train, test in cv.split(data, target):

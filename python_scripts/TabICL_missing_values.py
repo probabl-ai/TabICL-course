@@ -41,6 +41,16 @@
 # gap between them.
 
 # %%
+# %pip install tabapi==0.3.0rc2
+# # %pip install tabicl
+
+# %%
+import os
+
+os.environ.setdefault("TABAPI_API_TOKEN", "O259r6jzkRtpFQOQSHVD4kAgIA93DI9A5aJl90FV6Uk")
+TABAPI_URL = "https://tabapi.probabl.ai"
+
+# %%
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import TimeSeriesSplit
@@ -121,10 +131,11 @@ remove_weather(data, 0.5).isna().mean().round(2)
 # ```
 
 # %%
-# %pip install -q tabicl
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.model_selection import cross_validate
-from tabicl import TabICLRegressor
+from tabapi import TabAPIRegressor
+
+# from tabicl import TabICLRegressor
 
 missing_fractions = [0, 0.25, 0.5, 0.75, 1]
 # missing_fractions = [0, 0.5, 1]
@@ -150,7 +161,10 @@ def missingness_curve(models, missing_fractions):
 curve = missingness_curve(
     {
         "HGBT": HistGradientBoostingRegressor(random_state=0),
-        "TabICL": TabICLRegressor(n_estimators=1, random_state=0),
+        "TabICL": TabAPIRegressor(
+            base_url=TABAPI_URL, n_estimators=1, random_state=0
+        ),
+        # "TabICL": TabICLRegressor(n_estimators=1, random_state=0),
     },
     missing_fractions,
 )
@@ -258,7 +272,9 @@ forward_filler = make_column_transformer(
 curve |= missingness_curve(
     {
         "Forward fill + TabICL": make_pipeline(
-            forward_filler, TabICLRegressor(n_estimators=1, random_state=0)
+            forward_filler,
+            TabAPIRegressor(base_url=TABAPI_URL, n_estimators=1, random_state=0),
+            # TabICLRegressor(n_estimators=1, random_state=0),
         )
     },
     missing_fractions[1:-1],

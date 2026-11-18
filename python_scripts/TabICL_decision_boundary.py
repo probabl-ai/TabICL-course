@@ -55,7 +55,16 @@
 #   context which kind fits the table.
 
 # %%
-# %pip install -q tabicl
+# %pip install tabapi==0.3.0rc2
+# # %pip install tabicl
+
+# %%
+import os
+
+os.environ.setdefault("TABAPI_API_TOKEN", "O259r6jzkRtpFQOQSHVD4kAgIA93DI9A5aJl90FV6Uk")
+TABAPI_URL = "https://tabapi.probabl.ai"
+
+# %%
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -64,7 +73,9 @@ from sklearn.inspection import DecisionBoundaryDisplay
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import log_loss
 from sklearn.model_selection import RepeatedStratifiedKFold, cross_val_score
-from tabicl import TabICLClassifier
+from tabapi import TabAPIClassifier
+
+# from tabicl import TabICLClassifier
 
 
 def make_models():
@@ -72,7 +83,10 @@ def make_models():
         "Logistic regression": LogisticRegression(),
         "HGBT": HistGradientBoostingClassifier(random_state=0),
         # A single ensemble member is enough here, and keeps the maps fast
-        "TabICL": TabICLClassifier(n_estimators=1, random_state=0),
+        "TabICL": TabAPIClassifier(
+            base_url=TABAPI_URL, n_estimators=1, random_state=0
+        ),
+        # "TabICL": TabICLClassifier(n_estimators=1, random_state=0),
     }
 
 

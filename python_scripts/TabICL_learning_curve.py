@@ -17,6 +17,16 @@
 # training window grows, using a learning curve.
 
 # %%
+# %pip install tabapi==0.3.0rc2
+# # %pip install tabicl
+
+# %%
+import os
+
+os.environ.setdefault("TABAPI_API_TOKEN", "O259r6jzkRtpFQOQSHVD4kAgIA93DI9A5aJl90FV6Uk")
+TABAPI_URL = "https://tabapi.probabl.ai"
+
+# %%
 import pandas as pd
 
 bike_sharing = pd.read_csv("../datasets/bike_sharing.csv")
@@ -64,14 +74,16 @@ data = bike_sharing.drop(columns=target_name)
 # ```
 
 # %%
-# %pip install -q tabicl
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.model_selection import TimeSeriesSplit, cross_validate
-from tabicl import TabICLRegressor
+from tabapi import TabAPIRegressor
+
+# from tabicl import TabICLRegressor
 
 models = {
     "HGBT": HistGradientBoostingRegressor(random_state=0),
-    "TabICL": TabICLRegressor(n_estimators=1, random_state=0),
+    "TabICL": TabAPIRegressor(base_url=TABAPI_URL, n_estimators=1, random_state=0),
+    # "TabICL": TabICLRegressor(n_estimators=1, random_state=0),
 }
 models["TabICL"].fit(data.iloc[:100], target.iloc[:100])  # warm-up
 

@@ -48,6 +48,22 @@
 # representing about 5 percent of all transactions.
 
 # %%
+# %pip install tabapi==0.3.0rc2 skore pyodide-http
+# # %pip install tabicl
+
+# %%
+import os
+
+os.environ.setdefault("TABAPI_API_TOKEN", "O259r6jzkRtpFQOQSHVD4kAgIA93DI9A5aJl90FV6Uk")
+TABAPI_URL = "https://tabapi.probabl.ai"
+
+# %%
+# Lets `fetch_openml` download data when running in a browser.
+import pyodide_http
+
+pyodide_http.patch_urllib()
+
+# %%
 import pandas as pd
 from sklearn.datasets import fetch_openml
 
@@ -102,21 +118,18 @@ cv = StratifiedShuffleSplit(
 # side. Both models use default hyperparameters, except for TabICL's
 # ensemble, which we trim to a single member for speed as in the previous
 # notebook.
-#
-# We also turn on TabICL's `kv_cache`. As seen in a previous exercise, the
-# cache moves the work on the training rows into `fit` and pays off once the
-# same fitted model predicts more than once. skore calls the model several
-# times per split, so this saves time without changing the predictions.
 
 # %%
-# %pip install -q tabicl skore
 from sklearn.ensemble import HistGradientBoostingClassifier
 from skore import ComparisonReport, CrossValidationReport
-from tabicl import TabICLClassifier
+from tabapi import TabAPIClassifier
+
+# from tabicl import TabICLClassifier
 
 models = {
     "HGBT": HistGradientBoostingClassifier(random_state=0),
-    "TabICL": TabICLClassifier(n_estimators=1, kv_cache=True, random_state=0),
+    "TabICL": TabAPIClassifier(base_url=TABAPI_URL, n_estimators=1, random_state=0),
+    # "TabICL": TabICLClassifier(n_estimators=1, kv_cache=True, random_state=0),
 }
 report = ComparisonReport(
     {
